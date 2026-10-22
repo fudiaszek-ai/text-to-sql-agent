@@ -20,6 +20,47 @@ Autonomiczny agent AI pełniący rolę Analityka Danych. Aplikacja przekształca
 
 ### 1. Klonowanie repozytorium i konfiguracja środowiska
 ```bash
-git clone [https://github.com/TwojUsername/text-to-sql-agent.git](https://github.com/TwojUsername/text-to-sql-agent.git)
+git clone https://github.com/fudiaszek-ai/text-to-sql-agent.git
 cd text-to-sql-agent
 python -m venv venv
+```
+
+### 2. Aktywacja środowiska wirtualnego
+- **Windows (PowerShell):**
+  ```powershell
+  .\venv\Scripts\activate
+  ```
+
+### 3. Instalacja zależności
+```bash
+pip install groq python-dotenv
+```
+
+### 4. Konfiguracja klucza API
+Stwórz plik `.env` w głównym katalogu projektu:
+```env
+GROQ_API_KEY=twój_klucz_groq_api
+```
+
+### 5. Uruchomienie Agenta
+```bash
+python sql_agent.py
+```
+
+## 📋 Przykład Działania
+
+**Zapytanie biznesowe:**
+> *"Podaj łączną kwotę wydaną na zrealizowane zamówienia (status COMPLETED) przez poszczególnych klientów."*
+
+**Wygenerowany SQL:**
+```sql
+SELECT c.name, SUM(o.quantity * p.price) AS total_amount
+FROM customers c
+JOIN orders o ON c.customer_id = o.customer_id
+JOIN products p ON o.product_id = p.product_id
+WHERE o.status = 'COMPLETED'
+GROUP BY c.customer_id, c.name;
+```
+
+**Odpowiedź Agenta:**
+> Największym klientem pod względem wartości zrealizowanych zamówień jest **TechCorp Sp. z o.o.**, którego łączne wydatki wynoszą **24 250,00 zł**...
