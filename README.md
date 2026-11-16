@@ -1,66 +1,50 @@
 # Text-to-SQL AI Data Analyst Agent 📊🤖
 
-Autonomiczny agent AI pełniący rolę Analityka Danych. Aplikacja przekształca pytania biznesowe zadawane w języku naturalnym na bezpieczne zapytania SQL, wykonuje je na relacyjnej bazie danych (SQLite) i generuje podsumowania biznesowe.
+Kompleksowy system analityczny oparty o architekturę klient–serwer. Aplikacja przekształca pytania biznesowe zadawane w języku naturalnym na bezpieczne zapytania SQL, weryfikuje obliczenia w **Pandas**, automatycznie dobiera i generuje wykresy w **Matplotlib**, a całość prezentuje w interaktywnym interfejsie **Streamlit** połączonym z REST API (**FastAPI**).
+
+![Demo Aplikacji](assets/demo.png)
 
 ## 🌟 Kluczowe Funkcjonalności
 
-- **Dynamic Schema Inspection:** Agent samodzielnie analizuje strukturę bazy danych (`sqlite_master`) przed wygenerowaniem zapytania.
-- **Self-Correction Loop (Pętla Autokorekty):** W przypadku błędu składniowego lub braku kolumny w SQLite, agent przechwytuje komunikat błędu, analizuje go i automatycznie poprawia zapytanie (do 3 prób).
-- **Read-Only Safety Guardrail:** Weryfikacja wykonywania wyłącznie zapytań odczytu (`SELECT`).
-- **Natural Language Synthesis:** Przekształcanie surowych wyników tabelarycznych na czytelne raporty i wnioski biznesowe w języku polskim.
+- **Dynamic Schema Inspection & Sampling:** Agent pobiera strukturę tabel (`sqlite_master`) wraz z przykładowymi wierszami danych, eliminując błędy wielkości liter i formatowania.
+- **Self-Correction Loop (Pętla Autokorekty):** W przypadku błędu wykonania zapytania w SQLite, agent przechwytuje komunikat błędu i autonomicznie poprawia kod SQL (do 3 prób).
+- **Deterministic Math (Pandas):** Wszystkie sumy i statystyki są wyliczane deterministycznie przez bibliotekę Pandas przed przekazaniem ich do modelu LLM, co całkowicie eliminuje halucynacje matematyczne.
+- **Automated Data Visualization (LLM Router + Matplotlib):** Agent ocenia strukturę wyników i automatycznie generuje wykresy (`bar`, `line`, `pie`) serwowane przez dedykowany endpoint API.
+- **Read-Only Safety Guardrail:** Warstwa walidacji blokująca jakiekolwiek operacje modyfikujące bazę (dozwolone wyłącznie zapytania `SELECT`).
 
-## 🛠️ Technologie
+## 🛠️ Stack Technologiczny
 
-- **Language:** Python 3.11+
+- **Backend API:** FastAPI, Uvicorn, Pydantic
+- **Frontend UI:** Streamlit
+- **Data Processing & Charts:** Pandas, Matplotlib
 - **Database:** SQLite
 - **LLM Engine:** Groq API (`qwen/qwen3.8-27b`)
-- **Environment Management:** `python-dotenv`
 
 ## 🚀 Uruchomienie Projektu
 
-### 1. Klonowanie repozytorium i konfiguracja środowiska
+### 1. Klonowanie repozytorium i instalacja zależności
 ```bash
-git clone https://github.com/fudiaszek-ai/text-to-sql-agent.git
+git clone [https://github.com/fudiaszek-ai/text-to-sql-agent.git](https://github.com/fudiaszek-ai/text-to-sql-agent.git)
 cd text-to-sql-agent
 python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-### 2. Aktywacja środowiska wirtualnego
-- **Windows (PowerShell):**
-  ```powershell
-  .\venv\Scripts\activate
-  ```
-
-### 3. Instalacja zależności
-```bash
-pip install groq python-dotenv
-```
-
-### 4. Konfiguracja klucza API
+### 2. Konfiguracja klucza API
 Stwórz plik `.env` w głównym katalogu projektu:
 ```env
 GROQ_API_KEY=twój_klucz_groq_api
 ```
 
-### 5. Uruchomienie Agenta
-```bash
-python sql_agent.py
+### 3. Uruchomienie Backendu (Terminal 1)
+```powershell
+uvicorn api:app --reload
 ```
+Dokumentacja Swagger UI dostępna pod adresem: `http://127.0.0.1:8000/docs`
 
-## 📋 Przykład Działania
-
-**Zapytanie biznesowe:**
-> *"Podaj łączną kwotę wydaną na zrealizowane zamówienia (status COMPLETED) przez poszczególnych klientów."*
-
-**Wygenerowany SQL:**
-```sql
-SELECT c.name, SUM(o.quantity * p.price) AS total_amount
-FROM customers c
-JOIN orders o ON c.customer_id = o.customer_id
-JOIN products p ON o.product_id = p.product_id
-WHERE o.status = 'COMPLETED'
-GROUP BY c.customer_id, c.name;
+### 4. Uruchomienie Interfejsu Użytkownika (Terminal 2)
+```powershell
+streamlit run app.py
 ```
-
-**Odpowiedź Agenta:**
-> Największym klientem pod względem wartości zrealizowanych zamówień jest **TechCorp Sp. z o.o.**, którego łączne wydatki wynoszą **24 250,00 zł**...
+Aplikacja otworzy się w przeglądarce pod adresem: `http://localhost:8501`
