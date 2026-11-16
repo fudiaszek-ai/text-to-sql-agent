@@ -2,6 +2,7 @@ import os
 import sqlite3
 from dotenv import load_dotenv
 from groq import Groq
+from visualizer import build_dataframe_summary, generate_chart
 
 load_dotenv()
 
@@ -53,16 +54,17 @@ def execute_sql_query(query: str, db_path: str):
     return columns, results
 
 
-def synthesize_answer(user_question: str, sql_query: str, columns: list, rows: list) -> str:
-    """Tworzy zwięzłe podsumowanie biznesowe w języku naturalnym."""
+def synthesize_answer(user_question: str, sql_query: str, columns: list, rows: list, stats_summary: str) -> str:
+    """Tworzy zwięzłe podsumowanie biznesowe w oparciu o dokładne obliczenia Pandas."""
     system_prompt = """Jesteś profesjonalnym Analitykiem Danych.
-Na podstawie pytania biznesowego, wykonanego zapytania SQL oraz surowych wyników z bazy, przygotuj czytelną, zwięzłą odpowiedź po polsku.
-Formułuj konkretne wnioski, podając najważniejsze liczby i nazwy."""
+Na podstawie pytania biznesowego, wyników z bazy oraz gotowych statystyk z Pandas, przygotuj czytelną, zwięzłą odpowiedź po polsku.
+Używaj WYŁĄCZNIE dokładnych sum podanych w sekcji statystyk — nie licz sum samodzielnie."""
 
     user_content = f"""Pytanie: {user_question}
 Wykonany SQL: {sql_query}
 Kolumny: {columns}
-Wyniki z bazy: {rows}"""
+Wyniki z bazy: {rows}
+Statystyki Pandas: {stats_summary}"""
 
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -77,7 +79,7 @@ Wyniki z bazy: {rows}"""
 
 
 def run_agent_loop(user_question: str, max_retries: int = 3):
-    """Pętla agentowa z mechanizmem autokorekty (Self-Correction Loop)."""
+    """Pętla agentowa z autokorektą, syntezą Pandas oraz generowaniem wykresu."""
     schema = get_database_schema(DB_NAME)
 
     system_prompt = f"""Jesteś ekspertem SQL i Analitykiem Danych.
@@ -114,7 +116,6 @@ ZASADY:
         generated_sql = response.choices[0].message.content.strip()
         print(f"   Wygenerowany SQL: {generated_sql}")
 
-        # Przeznaczamy try...except WYŁĄCZNIE do wychwytywania błędów wykonywania SQL w bazie
         try:
             columns, rows = execute_sql_query(generated_sql, DB_NAME)
             print("   ✓ Sukces! Zapytanie wykonane poprawnie.")
@@ -130,9 +131,11 @@ ZASADY:
             })
             continue
 
-        # Po udanym wykonaniu SQL przechodzimy do syntezy
-        final_answer = synthesize_answer(user_question, generated_sql, columns, rows)
-        return generated_sql, columns, rows, final_answer
+        stats_summary = build_dataframe_summary(columns, rows)
+        final_answer = synthesize_answer(user_question, generated_sql, columns, rows, stats_summary)
+        chart_path = generate_chart(client, MODEL_NAME, user_question, columns, rows)
+
+        return generated_sql, columns, rows, final_answer, chart_path
 
     raise RuntimeError(f"Agent nie zdołał wygenerować poprawnego zapytania SQL po {max_retries} próbach.")
 
@@ -143,7 +146,9 @@ if __name__ == "__main__":
         "przez poszczególnych klientów. Pokaż nazwę klienta i sumaryczną kwotę."
     )
 
-    sql, cols, rows, answer = run_agent_loop(question)
+    sql, cols, rows, answer, chart = run_agent_loop(question)
 
     print("\n[ODPOWIEDŹ ANALITYKA DANYCH]:")
     print(answer)
+    if chart:
+        print(f"\n[WYKRES ZAPISANY]: {chart}")
