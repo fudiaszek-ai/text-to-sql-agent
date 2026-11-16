@@ -16,15 +16,25 @@ MODEL_NAME = "qwen/qwen3.8-27b"
 
 
 def get_database_schema(db_path: str) -> str:
-    """Pobiera dynamicznie schemat wszystkich tabel w bazie SQLite."""
+    """Pobiera schemat tabel wraz z próbką danych dla lepszego kontekstu LLM."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+    cursor.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
     tables = cursor.fetchall()
-    conn.close()
 
-    schema = "\n\n".join([table[0] for table in tables if table[0]])
-    return schema
+    schema_parts = []
+    for table_name, create_sql in tables:
+        if not create_sql:
+            continue
+        cursor.execute(f"SELECT * FROM {table_name} LIMIT 3;")
+        sample_rows = cursor.fetchall()
+        col_names = [desc[0] for desc in cursor.description]
+
+        part = f"{create_sql}\n/* Przykładowe wiersze {col_names}: {sample_rows} */"
+        schema_parts.append(part)
+
+    conn.close()
+    return "\n\n".join(schema_parts)
 
 
 def execute_sql_query(query: str, db_path: str):
@@ -81,6 +91,7 @@ Struktura bazy danych:
 ZASADY:
 1. Generuj WYŁĄCZNIE czysty kod SQL (SELECT). Bez znaczników Markdown (```sql) ani komentarzy.
 2. Jeśli w zapytaniu wystąpi błąd, przeanalizujesz go i zwrócisz poprawiony SQL.
+3. Zwracaj uwagę na wielkość liter z przykładowych danych, a przy filtrowaniu tekstów stosuj porównania niewrażliwe na wielkość liter (np. UPPER(kolumna) = 'WARTOŚĆ').
 """
 
     messages = [
