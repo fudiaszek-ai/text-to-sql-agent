@@ -1,24 +1,34 @@
 # Text-to-SQL AI Data Analyst Agent 📊🤖
 
-Kompleksowy system analityczny oparty o architekturę klient–serwer. Aplikacja przekształca pytania biznesowe zadawane w języku naturalnym na bezpieczne zapytania SQL, weryfikuje obliczenia w **Pandas**, automatycznie dobiera i generuje wykresy w **Matplotlib**, a całość prezentuje w interaktywnym interfejsie **Streamlit** połączonym z REST API (**FastAPI**).
+Kompleksowy system analityczny BI oparty o architekturę klient–serwer. Aplikacja przekształca pytania biznesowe zadawane w języku naturalnym na bezpieczne zapytania SQL, pozwala na analizę dowolnych własnych zbiorów danych (`.csv`, `.db`, `.sqlite`), weryfikuje obliczenia w **Pandas**, automatycznie dobiera i generuje wykresy w **Matplotlib**, a całość prezentuje w interaktywnym interfejsie **Streamlit** połączonym z REST API (**FastAPI**).
 
 ![Demo Aplikacji](assets/demo.png)
 
 ## 🌟 Kluczowe Funkcjonalności
 
-- **Dynamic Schema Inspection & Sampling:** Agent pobiera strukturę tabel (`sqlite_master`) wraz z przykładowymi wierszami danych, eliminując błędy wielkości liter i formatowania.
+- **Custom CSV & SQLite Upload:** Możliwość wgrania własnych plików `.csv`, `.db` lub `.sqlite` bezpośrednio z panelu bocznego. Pliki CSV są automatycznie parsowane w Pandas (z detekcją separatorów `,` oraz `;`), normalizowane pod kątem nazw kolumn i konwertowane do lokalnej bazy SQLite.
+- **Dynamic Schema Inspection & Sampling:** Agent dynamicznie pobiera strukturę tabel (`sqlite_master`) aktywnej bazy wraz z przykładowymi wierszami danych, eliminując błędy wielkości liter i formatowania.
 - **Self-Correction Loop (Pętla Autokorekty):** W przypadku błędu wykonania zapytania w SQLite, agent przechwytuje komunikat błędu i autonomicznie poprawia kod SQL (do 3 prób).
+- **Context-First Ranking:** Przy pytaniach o wartości skrajne (*„najwyższy”*, *„najlepszy”*) agent zwraca posortowany ranking zamiast pojedynczego rekordu (`LIMIT 1`), zachowując pełny kontekst do generowania wykresów oraz obsługi remisów.
 - **Deterministic Math (Pandas):** Wszystkie sumy i statystyki są wyliczane deterministycznie przez bibliotekę Pandas przed przekazaniem ich do modelu LLM, co całkowicie eliminuje halucynacje matematyczne.
-- **Automated Data Visualization (LLM Router + Matplotlib):** Agent ocenia strukturę wyników i automatycznie generuje wykresy (`bar`, `line`, `pie`) serwowane przez dedykowany endpoint API.
+- **Automated Data Visualization (LLM Router + Matplotlib):** Agent analizuje strukturę wyników i automatycznie dobiera oraz renderuje wykresy (`bar`, `line`, `pie`) serwowane przez dedykowany endpoint API.
 - **Read-Only Safety Guardrail:** Warstwa walidacji blokująca jakiekolwiek operacje modyfikujące bazę (dozwolone wyłącznie zapytania `SELECT`).
 
 ## 🛠️ Stack Technologiczny
 
-- **Backend API:** FastAPI, Uvicorn, Pydantic
+- **Backend API:** FastAPI, Uvicorn, Pydantic, Python-Multipart
 - **Frontend UI:** Streamlit
 - **Data Processing & Charts:** Pandas, Matplotlib
 - **Database:** SQLite
 - **LLM Engine:** Groq API (`qwen/qwen3.8-27b`)
+
+## 🔌 Główne Endpointy API
+
+- `GET /` — sprawdzenie statusu serwera, nazwy aktywnej bazy oraz struktury jej tabel i kolumn.
+- `POST /ask` — przetworzenie pytania w języku naturalnym, wykonanie SQL, synteza odpowiedzi i wygenerowanie wykresu.
+- `POST /upload` — wgranie pliku `.csv`, `.db` lub `.sqlite` i przełączenie aktywnego źródła danych.
+- `POST /reset-db` — przywrócenie domyślnej bazy danych (`company.db`).
+- `GET /chart/latest` — pobranie ostatnio wygenerowanego wykresu w formacie PNG.
 
 ## 🚀 Uruchomienie Projektu
 

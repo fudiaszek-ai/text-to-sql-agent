@@ -11,36 +11,83 @@ st.set_page_config(
 )
 
 st.title("📊 AI Data Analyst — Text-to-SQL Agent")
-st.caption("Zadawaj pytania biznesowe w języku naturalnym. Agent wygeneruje SQL, zweryfikuje wyniki w Pandas i dobierze wizualizację.")
+st.caption("Zadawaj pytania biznesowe w języku naturalnym lub wgraj własny plik CSV / SQLite w panelu bocznym.")
 
-# Inicjalizacja historii czatu
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Panel boczny: status API oraz gotowe pytania testowe
+# Panel boczny: status, wgrywanie plików, struktura bazy
 with st.sidebar:
-    st.header("⚙️ Status Systemu")
+    st.header("⚙️ Status i Źródło Danych")
+
+    api_online = False
+    is_default_db = True
+    tables_info = {}
+
     try:
         health = requests.get(f"{API_URL}/", timeout=2)
         if health.status_code == 200:
-            st.success("Backend FastAPI: Online")
+            api_online = True
+            info_data = health.json()
+            active_db_name = info_data.get("active_db", "company.db")
+            is_default_db = info_data.get("is_default", True)
+            tables_info = info_data.get("tables", {})
+
+            st.success(f"Backend FastAPI: Online\n\nAktywna baza: **`{active_db_name}`**")
         else:
             st.warning(f"Backend odpowiedział kodem: {health.status_code}")
     except requests.exceptions.ConnectionError:
         st.error("Backend FastAPI: Offline (uruchom uvicorn)")
 
-    st.divider()
-    st.subheader("💡 Przykładowe pytania")
-    example_questions = [
-        "Podaj łączną kwotę wydaną na zrealizowane zamówienia przez poszczególnych klientów.",
-        "Które produkty sprzedają się najlepiej pod względem liczby zamówionych sztuk?",
-        "Pokaż wartość zamówień w podziale na ich status.",
-        "Jakie zamówienia złożył klient TechCorp Sp. z o.o.?"
-    ]
+    # Sekcja wgrywania własnych plików
+    if api_online:
+        st.divider()
+        st.subheader("📂 Wgraj własne dane")
+        uploaded_file = st.file_uploader(
+            "Wybierz plik CSV lub SQLite",
+            type=["csv", "db", "sqlite"],
+            help="Plik CSV zostanie automatycznie przekonwertowany na tabelę SQLite."
+        )
 
-    for eq in example_questions:
-        if st.button(eq, use_container_width=True):
-            st.session_state.pending_prompt = eq
+        if uploaded_file is not None:
+            if st.button("📥 Załaduj plik do analizy", type="primary", use_container_width=True):
+                with st.spinner("Przetwarzam plik..."):
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
+                    resp = requests.post(f"{API_URL}/upload", files=files, timeout=30)
+                    if resp.status_code == 200:
+                        st.session_state.messages = []
+                        st.toast(f"Załadowano: {uploaded_file.name}", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(resp.json().get("detail", "Błąd podczas wgrywania pliku."))
+
+        if not is_default_db:
+            if st.button("🔄 Przywróć bazę company.db", use_container_width=True):
+                requests.post(f"{API_URL}/reset-db", timeout=10)
+                st.session_state.messages = []
+                st.rerun()
+
+        # Podgląd struktury tabel aktywnej bazy
+        if tables_info:
+            with st.expander("📋 Tabele i kolumny w bazie", expanded=not is_default_db):
+                for tbl, cols in tables_info.items():
+                    st.markdown(f"**`{tbl}`**")
+                    st.caption(", ".join(cols))
+
+    # Gotowe pytania pokazujemy tylko dla domyślnej bazy company.db
+    if is_default_db:
+        st.divider()
+        st.subheader("💡 Przykładowe pytania dla bazy company.db")
+        example_questions = [
+            "Podaj łączną kwotę wydaną na zrealizowane zamówienia przez poszczególnych klientów.",
+            "Które produkty sprzedają się najlepiej pod względem liczby zamówionych sztuk?",
+            "Pokaż wartość zamówień w podziale na ich status.",
+            "Jakie zamówienia złożył klient TechCorp Sp. z o.o.?"
+        ]
+
+        for eq in example_questions:
+            if st.button(eq, use_container_width=True):
+                st.session_state.pending_prompt = eq
 
     st.divider()
     if st.button("🗑️ Wyczyść historię czatu", use_container_width=True):
@@ -68,12 +115,10 @@ if "pending_prompt" in st.session_state:
     user_prompt = st.session_state.pop("pending_prompt")
 
 if user_prompt:
-    # Wyświetlenie i zapisanie wiadomości użytkownika
     st.session_state.messages.append({"role": "user", "content": user_prompt})
     with st.chat_message("user"):
         st.markdown(user_prompt)
 
-    # Zapytanie do backendu FastAPI
     with st.chat_message("assistant"):
         with st.spinner("Analizuję bazę, generuję SQL i tworzę wykres..."):
             try:
@@ -89,7 +134,6 @@ if user_prompt:
                     sql_query = data["sql_query"]
                     df = pd.DataFrame(data["rows"], columns=data["columns"]) if data["rows"] else pd.DataFrame()
 
-                    # Pobranie bajtów wykresu, jeśli został wygenerowany
                     chart_bytes = None
                     if data.get("chart_path"):
                         chart_resp = requests.get(f"{API_URL}/chart/latest", timeout=10)

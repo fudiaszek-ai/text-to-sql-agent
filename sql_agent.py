@@ -1,19 +1,53 @@
 import os
 import sqlite3
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from groq import Groq
 from visualizer import build_dataframe_summary, generate_chart
 
 load_dotenv()
 
-DB_NAME = "company.db"
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DEFAULT_DB = "company.db"
+ACTIVE_DB_PATH = DEFAULT_DB
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise ValueError("Brak klucza GROQ_API_KEY w pliku .env!")
 
 client = Groq(api_key=GROQ_API_KEY)
 MODEL_NAME = "qwen/qwen3.8-27b"
+
+
+def set_active_database(db_path: str) -> None:
+    """Ustawia ścieżkę do aktywnej bazy SQLite."""
+    global ACTIVE_DB_PATH
+    ACTIVE_DB_PATH = db_path
+
+
+def get_active_database() -> str:
+    """Zwraca ścieżkę do obecnie używanej bazy SQLite."""
+    return ACTIVE_DB_PATH
+
+
+def get_tables_info(db_path: Optional[str] = None) -> Dict[str, List[str]]:
+    """Zwraca słownik {nazwa_tabeli: [lista_kolumn]} dla podglądu struktury w UI."""
+    target_db = db_path or ACTIVE_DB_PATH
+    if not os.path.exists(target_db):
+        return {}
+
+    conn = sqlite3.connect(target_db)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+    tables = [row[0] for row in cursor.fetchall()]
+
+    info: Dict[str, List[str]] = {}
+    for table in tables:
+        cursor.execute(f'PRAGMA table_info("{table}");')
+        cols = [row[1] for row in cursor.fetchall()]
+        info[table] = cols
+
+    conn.close()
+    return info
 
 
 def get_database_schema(db_path: str) -> str:
@@ -27,7 +61,7 @@ def get_database_schema(db_path: str) -> str:
     for table_name, create_sql in tables:
         if not create_sql:
             continue
-        cursor.execute(f"SELECT * FROM {table_name} LIMIT 3;")
+        cursor.execute(f'SELECT * FROM "{table_name}" LIMIT 3;')
         sample_rows = cursor.fetchall()
         col_names = [desc[0] for desc in cursor.description]
 
@@ -80,7 +114,11 @@ Statystyki Pandas: {stats_summary}"""
 
 def run_agent_loop(user_question: str, max_retries: int = 3):
     """Pętla agentowa z autokorektą, syntezą Pandas oraz generowaniem wykresu."""
-    schema = get_database_schema(DB_NAME)
+    current_db = get_active_database()
+    schema = get_database_schema(current_db)
+
+    if not schema.strip():
+        raise RuntimeError("Aktywna baza danych nie zawiera żadnych tabel.")
 
     system_prompt = f"""Jesteś ekspertem SQL i Analitykiem Danych.
 Twoim zadaniem jest przekształcanie pytań biznesowych użytkownika na poprawne zapytania SQL dla bazy SQLite.
@@ -94,6 +132,7 @@ ZASADY:
 1. Generuj WYŁĄCZNIE czysty kod SQL (SELECT). Bez znaczników Markdown (```sql) ani komentarzy.
 2. Jeśli w zapytaniu wystąpi błąd, przeanalizujesz go i zwrócisz poprawiony SQL.
 3. Zwracaj uwagę na wielkość liter z przykładowych danych, a przy filtrowaniu tekstów stosuj porównania niewrażliwe na wielkość liter (np. UPPER(kolumna) = 'WARTOŚĆ').
+4. Przy pytaniach o rekordy skrajne (np. "najwyższy", "najlepszy", "najmniej") NIE używaj LIMIT 1 — zwróć pełny posortowany ranking (maks. LIMIT 10), aby zachować kontekst do wykresu i uniknąć pominięcia remisów. Zawsze dołączaj do SELECT kolumnę, po której odbywa się sortowanie.
 """
 
     messages = [
@@ -101,7 +140,7 @@ ZASADY:
         {"role": "user", "content": f"Pytanie: {user_question}"}
     ]
 
-    print(f"\n[ZAPYTANIE BIZNESOWE]: {user_question}")
+    print(f"\n[BAZA: {current_db}] [ZAPYTANIE]: {user_question}")
     print("-" * 60)
 
     for attempt in range(1, max_retries + 1):
@@ -117,7 +156,7 @@ ZASADY:
         print(f"   Wygenerowany SQL: {generated_sql}")
 
         try:
-            columns, rows = execute_sql_query(generated_sql, DB_NAME)
+            columns, rows = execute_sql_query(generated_sql, current_db)
             print("   ✓ Sukces! Zapytanie wykonane poprawnie.")
             print("-" * 60)
         except Exception as e:
@@ -138,17 +177,3 @@ ZASADY:
         return generated_sql, columns, rows, final_answer, chart_path
 
     raise RuntimeError(f"Agent nie zdołał wygenerować poprawnego zapytania SQL po {max_retries} próbach.")
-
-
-if __name__ == "__main__":
-    question = (
-        "Podaj łączną kwotę wydaną na zrealizowane zamówienia (status COMPLETED) "
-        "przez poszczególnych klientów. Pokaż nazwę klienta i sumaryczną kwotę."
-    )
-
-    sql, cols, rows, answer, chart = run_agent_loop(question)
-
-    print("\n[ODPOWIEDŹ ANALITYKA DANYCH]:")
-    print(answer)
-    if chart:
-        print(f"\n[WYKRES ZAPISANY]: {chart}")
